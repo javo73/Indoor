@@ -1,19 +1,23 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WebServer.h>
 #include <WiFiClient.h>
 #include <ESPDateTime.h>
-
+//Asyc Web Server
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+float t = 61.61;
+float h = 61.61;
 
 unsigned long startMillis;
 unsigned long currentMillis;
 const unsigned long period = 1000; //1sec period
 
 
-// Pinout Connections
-//Light Relays  
-int lrelay1_Pin = 13;
-int lrelay2_Pin = 12;
+//Light Variable Setup (includes relay pins, and global variables) 
+int lrelay1_Pin = 36;
+int lrelay2_Pin = 39;
+int lrelay3_Pin = 34;
+
 const char* NIGHTCYCLE_ON = "12:30:00";
 const char* NIGHTCYCLE_OFF = "18:30:00";
 unsigned long cycleStart;
@@ -22,29 +26,88 @@ unsigned long cycleOffMillis;
 bool cycleUpFlag = false;
 bool cycleState = false; // True is ON (Night), false is OFF (Day)
 //Fan Relays
+int fanrelay2_Pin2 = 35;
+int fanrelay3_Pin1 = 32;
+int fanrelay3_Pin2 = 33;
 //int frelay1_Pin = **;
 
 //SSID credentials
 const char* ssid     = "Cuna de la ciencia";
 const char* password = "enricofermi";
 // Set web server port number to 80
-WebServer server(80);
+AsyncWebServer server(80);
 
-// Variable to store the HTTP request
-String header;
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+  <style>
+    html {
+     font-family: Arial;
+     display: inline-block;
+     margin: 0px auto;
+     text-align: center;
+    }
+    h2 { font-size: 3.0rem; }
+    p { font-size: 3.0rem; }
+    .units { font-size: 1.2rem; }
+    .dht-labels{
+      font-size: 1.5rem;
+      vertical-align:middle;
+      padding-bottom: 15px;
+    }
+  </style>
+</head>
+<body>
+  <h2>ESP8266 DHT Server</h2>
+  <p>
+    <i class="fas fa-thermometer-half" style="color:#059e8a;"></i> 
+    <span class="dht-labels">Temperature</span> 
+    <span id="temperature">%TEMPERATURE%</span>
+    <sup class="units">&deg;C</sup>
+  </p>
+  <p>
+    <i class="fas fa-tint" style="color:#00add6;"></i> 
+    <span class="dht-labels">Humidity</span>
+    <span id="humidity">%HUMIDITY%</span>
+    <sup class="units">%</sup>
+  </p>
+</body>
+<script>
+setInterval(function ( ) {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      document.getElementById("temperature").innerHTML = this.responseText;
+    }
+  };
+  xhttp.open("GET", "/temperature", true);
+  xhttp.send();
+}, 10000 ) ;
+setInterval(function ( ) {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      document.getElementById("humidity").innerHTML = this.responseText;
+    }
+  };
+  xhttp.open("GET", "/humidity", true);
+  xhttp.send();
+}, 10000 ) ;
+</script>
+</html>)rawliteral";
 
-// HTML & CSS contents which display on web server
-String HTML = "<!DOCTYPE html>\
-  <html>\
-  <body>\
-  <h1>Indoor Management</h1>\
-  <i>Luces</i>\
-  </body>\
-  </html>";
- 
-void handle_root() {
-// Handle root url (/)
-  server.send(200, "text/html", HTML);
+// Replaces placeholder with DHT values
+String processor(const String& var){
+  //Serial.println(var);
+  if(var == "TEMPERATURE"){
+    return String(t);
+  }
+  else if(var == "HUMIDITY"){
+    return String(h);
+  }
+  return String();
 }
 
 void setupDateTime() {
@@ -91,26 +154,28 @@ int checkTime(){
     }
 }
 
-int changeRelayState(int state){ 
+void changeRelayState(int state){ 
 //Returns an integer after switching relay states based on state recieved
   unsigned long lastMillis;
   switch(state){
       case 0:
         if(cycleState == false){
           //digitalWrite(lrelay1_Pin,LOW); //Lights Off
+          //digitalWrite(lrelay2_Pin,LOW); //Lights Off
+          //digitalWrite(lrelay3_Pin,LOW); //Lights Off
           Serial.println("Lights OFF");
           cycleState = true;
           cycleOnMillis = millis();
-          return 0;
           }
           break;
       case 1:
         if(cycleState == true){
           //digitalWrite(lrelay1_Pin,HIGH); // Lights ON
+          //digitalWrite(lrelay2_Pin,HIGH); // Lights ON
+          //digitalWrite(lrelay3_Pin,HIGH); // Lights ON
           Serial.println("Lights ON");
           cycleState = false;
           cycleOffMillis = millis();
-          return 1;
         }  
         break;
       case 2:
@@ -126,7 +191,6 @@ int changeRelayState(int state){
            //Serial.print("Tiempo Apagado (Minutos) :");
            //Serial.println(lastMillis / 60000);
          }
-         return 2;
          break;
   }   
 }
@@ -149,7 +213,17 @@ void setup(){
   Serial.println("WiFi connected.");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
-  server.on("/",handle_root);
+  
+  //Async Web Server 
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html, processor);
+  });
+  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/plain", String(t).c_str());
+  });
+  server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/plain", String(h).c_str());
+  });
   server.begin();
 
   Serial.println(DateTime.format(DateFormatter::TIME_ONLY));
@@ -157,14 +231,11 @@ void setup(){
   String h2 = DateTime.format("%T");
   Serial.println(h);
   Serial.println(h2);
-  
 }
 void loop(){
   // put your main code here, to run repeatedly:
   int relay_state;
-  server.handleClient();
   relay_state = checkTime();
-  changeRelayState(relay_state);  
-  
+  changeRelayState(relay_state);
 }
 
