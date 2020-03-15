@@ -5,13 +5,22 @@
 #include <ESPDateTime.h>
 
 
+unsigned long startMillis;
+unsigned long currentMillis;
+const unsigned long period = 1000; //1sec period
+
 
 // Pinout Connections
 //Light Relays  
 int lrelay1_Pin = 13;
 int lrelay2_Pin = 12;
-const char* NIGHTCYCLE_ON = "12:00";
-const char* NIGHTCYCLE_OFF = "18:00";
+const char* NIGHTCYCLE_ON = "12:30:00";
+const char* NIGHTCYCLE_OFF = "18:30:00";
+unsigned long cycleStart;
+unsigned long cycleOnMillis;
+unsigned long cycleOffMillis;
+bool cycleUpFlag = false;
+bool cycleState = false; // True is ON (Night), false is OFF (Day)
 //Fan Relays
 //int frelay1_Pin = **;
 
@@ -26,19 +35,20 @@ String header;
 
 // HTML & CSS contents which display on web server
 String HTML = "<!DOCTYPE html>\
-<html>\
-<body>\
-<h1>Indoor Management</h1>\
-<i>Luces</i>\
-</body>\
-</html>";
+  <html>\
+  <body>\
+  <h1>Indoor Management</h1>\
+  <i>Luces</i>\
+  </body>\
+  </html>";
  
-// Handle root url (/)
 void handle_root() {
+// Handle root url (/)
   server.send(200, "text/html", HTML);
 }
 
 void setupDateTime() {
+//DateTime Setup  
   // setup this after wifi connected
   // you can use custom timeZone,server and timeout
   // DateTime.setServer("asia.pool.ntp.org");
@@ -61,20 +71,72 @@ void setupWiFi(){
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
-}
+  }
 }
 
-void checkTime(){ //Gives a TRUE output if the time is between the dark hours 
+int checkTime(){ 
+//Returns an integer for one of three possible states 
   String h2 = DateTime.format("%R");
-
-  if(h2 >= NIGHTCYCLE_ON)
-    Serial.println("ALARM");
-    else
-    Serial.println(h2);
+  if(h2 == NIGHTCYCLE_ON){
+    Serial.println("Night Cycle ON");
+    return 0;
+  }
+    else if(h2 == NIGHTCYCLE_OFF){
+      Serial.println("Night Cycle OFF");
+      return 1;
+    }
+    else{
+      Serial.println("Stand-By");
+      return 2;
+    }
 }
+
+int changeRelayState(int state){ 
+//Returns an integer after switching relay states based on state recieved
+  unsigned long lastMillis;
+  switch(state){
+      case 0:
+        if(cycleState == false){
+          //digitalWrite(lrelay1_Pin,LOW); //Lights Off
+          Serial.println("Lights OFF");
+          cycleState = true;
+          cycleOnMillis = millis();
+          return 0;
+          }
+          break;
+      case 1:
+        if(cycleState == true){
+          //digitalWrite(lrelay1_Pin,HIGH); // Lights ON
+          Serial.println("Lights ON");
+          cycleState = false;
+          cycleOffMillis = millis();
+          return 1;
+        }  
+        break;
+      case 2:
+       if(cycleState == true){
+         currentMillis = millis();
+         lastMillis = cycleOnMillis - currentMillis;
+         //Serial.print("Tiempo Encendido (Minutos) :");
+         //Serial.println(lastMillis / 60000);
+         }
+         else{
+           currentMillis = millis();
+           lastMillis = cycleOffMillis - currentMillis;
+           //Serial.print("Tiempo Apagado (Minutos) :");
+           //Serial.println(lastMillis / 60000);
+         }
+         return 2;
+         break;
+  }   
+}
+
+
+
 void setup(){
   // put your setup code here, to run once:
   Serial.begin(9600);
+  startMillis = millis();
   //Setting relays up
   pinMode(lrelay1_Pin, OUTPUT);
   pinMode(lrelay2_Pin, OUTPUT);
@@ -92,16 +154,17 @@ void setup(){
 
   Serial.println(DateTime.format(DateFormatter::TIME_ONLY));
   String h = DateTime.toString();
-  String h2 = DateTime.format("%R");
+  String h2 = DateTime.format("%T");
   Serial.println(h);
   Serial.println(h2);
   
 }
 void loop(){
   // put your main code here, to run repeatedly:
+  int relay_state;
   server.handleClient();
-  
-    
+  relay_state = checkTime();
+  changeRelayState(relay_state);  
   
 }
 
