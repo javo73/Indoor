@@ -1,0 +1,13 @@
+Indoor growing light and airflow management.
+ESP 32 DEV KIT
+DHT22 SENSOR X 3
+X2 RELAY MODULE X 3
+PLATFORMIO ON VSCODE
+
+The code is pretty simple and its focused on sensing Temperature and  Relative Humidity (with DHT22 sensors),
+and controlling the ON/OFF light and fan cycles with the use of relay modules.
+
+I look forward to make it more user-friendly and web-controlling for a most styled-base experience.
+
+Until I manage to get it to work fully, Ill be commiting several changes with no proper documentation for testing means.
+After that I promise that every commit will be fully detailed.
