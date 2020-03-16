@@ -5,17 +5,55 @@
 //Asyc Web Server
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-float t = 61.61;
-float h = 61.61;
+float temp = 00.00;
+float hum = 00.00;
+//DHT22 SENSOR
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#define TOPSENSOR_PIN  39
+#define DHTTYPE    DHT22
+DHT topSensor(TOPSENSOR_PIN,DHTTYPE);
 
 unsigned long startMillis;
 unsigned long currentMillis;
-const unsigned long period = 1000; //1sec period
+unsigned long dhtpreviousMillis = 0;
+const unsigned long period = 5000; //5sec period
 
+//DHT22 Temperature & Humidity Sensor
+String readDHTTemperature() {
+  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+  // Read temperature as Celsius (the default)
+  float temp = topSensor.readTemperature();
+  // Read temperature as Fahrenheit (isFahrenheit = true)
+  //float t = dht.readTemperature(true);
+  // Check if any reads failed and exit early (to try again).
+  if (isnan(temp)) {    
+    Serial.println("Failed to read from DHT sensor!");
+    return "--";
+  }
+  else {
+    Serial.println(temp);
+    return String(temp);
+  }
+}
+
+String readDHTHumidity() {
+  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+  float hum = topSensor.readHumidity();
+  Serial.println(hum);
+  if (isnan(hum)) {
+    Serial.println("Failed to read from DHT sensor!");
+    return "--";
+  }
+  else {
+    Serial.println(hum);
+    return String(hum);
+  }
+}
 
 //Light Variable Setup (includes relay pins, and global variables) 
-int lrelay1_Pin = 36;
-int lrelay2_Pin = 39;
+int lrelay1_Pin = 25;
+int lrelay2_Pin = 26;
 int lrelay3_Pin = 34;
 
 const char* NIGHTCYCLE_ON = "12:30:00";
@@ -100,12 +138,12 @@ setInterval(function ( ) {
 
 // Replaces placeholder with DHT values
 String processor(const String& var){
-  //Serial.println(var);
+  Serial.println(var);
   if(var == "TEMPERATURE"){
-    return String(t);
+    return String(temp);
   }
   else if(var == "HUMIDITY"){
-    return String(h);
+    return String(hum);
   }
   return String();
 }
@@ -207,6 +245,7 @@ void setup(){
 
   setupWiFi();
   setupDateTime();
+  topSensor.begin();
 
 // Print local IP address and start web server
   Serial.println("");
@@ -219,10 +258,10 @@ void setup(){
     request->send_P(200, "text/html", index_html, processor);
   });
   server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/plain", String(t).c_str());
+    request->send_P(200, "text/plain", String(temp).c_str());
   });
   server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/plain", String(h).c_str());
+    request->send_P(200, "text/plain", String(hum).c_str());
   });
   server.begin();
 
@@ -234,8 +273,29 @@ void setup(){
 }
 void loop(){
   // put your main code here, to run repeatedly:
+  unsigned long dhtMillis = millis();
   int relay_state;
   relay_state = checkTime();
   changeRelayState(relay_state);
+  if (dhtMillis - dhtpreviousMillis >= period ) {
+    dhtpreviousMillis = dhtMillis;
+    float newT = topSensor.readTemperature();
+      if(isnan(newT)) {
+        Serial.println("Failed to read from DHT sensor!");
+      }
+        else {
+          temp = newT;
+          Serial.println(temp);
+        }
+  
+    float newH = topSensor.readHumidity();
+        if(isnan(newH)) {
+          Serial.println("Failed to read from DHT sensor!");
+        }
+          else {
+            hum = newH;
+            Serial.println(hum);
+          }
+  }
 }
 
