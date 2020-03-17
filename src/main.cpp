@@ -5,25 +5,42 @@
 //Asyc Web Server
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <PietteTech_DHT.h> //DHT22 SENSOR
 
-//DHT22 SENSOR
-#include <Adafruit_Sensor.h>
-#include <DHT.h>
-#include <DHT_U.h>
+
+
 
 //DHT22 Temperature & Humidity Sensor
-#define DHTPIN  14
-#define DHTTYPE    DHT22
+#define DHTPIN  2
+#define DHTTYPE DHT22
+#define REPORT_INTERVAL 2500
+// to check dht
+unsigned long startMills;
+float temp, hum, d;
+int acquireresult;
+int acquirestatus;
 
-DHT_Unified dht(DHTPIN,DHTTYPE);
+//declaration
+void dht_wrapper(); // must be declared before the lib initialization
 
-float temp = 00.00;
-float hum = 00.00;
+// Lib instantiate
+PietteTech_DHT DHT(DHTPIN, DHTTYPE, dht_wrapper);
+
+// globals
+bool bDHTstarted;       // flag to indicate we started acquisition
+
+// This wrapper is in charge of calling
+// must be defined like this for the lib work
+void dht_wrapper() {
+  DHT.isrCallback();
+}
+
+
 
 unsigned long startMillis;
 unsigned long currentMillis;
 unsigned long dhtpreviousMillis = 0;
-const unsigned long period = 2000; //2sec period
+const unsigned long period = 2500; //2.5sec period
 
 
 
@@ -247,7 +264,7 @@ void setup(){
   // put your setup code here, to run once:
   Serial.begin(9600);
   startMillis = millis();
-  dht.begin();
+  //dht.begin();
   //Setting relays up
   pinMode(lrelay1_Pin, OUTPUT);
   pinMode(lrelay2_Pin, OUTPUT);
@@ -279,7 +296,26 @@ void setup(){
   String h2 = DateTime.format("%T");
   Serial.println(h);
   Serial.println(h2);
-  //DHT22
+
+  Serial.println("");
+  Serial.println("DHT Example program using DHT.acquire and DHT.acquireAndWait");
+  Serial.println("");
+
+  // delay 2 sec before start acquire
+  while ( (millis() - startMills) < 2000 ) {
+    yield();
+  }
+  // blocking method
+  acquirestatus = 0;
+  acquireresult = DHT.acquireAndWait(1000);
+  if ( acquireresult == 0 ) {
+    temp = DHT.getCelsius();
+    hum = DHT.getHumidity();
+    d = DHT.getDewPoint();
+  } else {
+    temp = hum = d = 0;
+  }
+  /*DHT22
   Serial.println(F("DHT22 Unified Sensor Example"));
   // Print temperature sensor details.
   sensor_t sensor;
@@ -294,36 +330,54 @@ void setup(){
   Serial.println(F("------------------------------------"));
   Serial.print  (F("Sensor Type: ")); Serial.println(sensor.name);
   // Set delay between sensor readings based on sensor details.
+  */
 }
 void loop(){
   // put your main code here, to run repeatedly:
-  unsigned long dhtMillis = millis();
-  int relay_state;
+  //int relay_state;
   //relay_state = checkTime();
   //changeRelayState(relay_state);
-  if (dhtMillis - dhtpreviousMillis >= period ) {
-    dhtpreviousMillis = dhtMillis;
-     sensors_event_t event;
-    dht.temperature().getEvent(&event);
-    if (isnan(event.temperature)) {
-      Serial.println(F("Error reading temperature!"));
-    }
-    else {
-      Serial.print(F("Temperature: "));
-      Serial.print(event.temperature);
-      Serial.println(F("°C"));
-    }
-    // Get humidity event and print its value.
-    dht.humidity().getEvent(&event);
-    if (isnan(event.relative_humidity)) {
-      Serial.println(F("Error reading humidity!"));
-    }
-    else {
-      Serial.print(F("Humidity: "));
-      Serial.print(event.relative_humidity);
-      Serial.println(F("%"));
+  if (bDHTstarted) {
+    acquirestatus = DHT.acquiring();
+    if (!acquirestatus) {
+      acquireresult = DHT.getStatus();
+      if ( acquireresult == 0 ) {
+        temp = DHT.getCelsius();
+        hum = DHT.getHumidity();
+        d = DHT.getDewPoint();
+      }
+      bDHTstarted = false;
     }
   }
-  
+
+  if ((millis() - startMills) > REPORT_INTERVAL) {
+    if ( acquireresult == 0 ) {
+      Serial.println("");
+
+      Serial.print("Humidity (%): ");
+      Serial.println(hum);
+
+      Serial.print("Temperature (oC): ");
+      Serial.println(temp);
+
+      Serial.print("Dew Point (oC): ");
+      Serial.println(d);
+
+    } else {
+      Serial.println("Is dht22 connected");
+    }
+    startMills = millis();
+
+    // to remove lock
+    if (acquirestatus == 1) {
+      DHT.reset();
+    }
+
+    if (!bDHTstarted) {
+      // non blocking method
+      DHT.acquire();
+      bDHTstarted = true;
+    }
+  }
 }
 
